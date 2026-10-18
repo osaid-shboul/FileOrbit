@@ -1,16 +1,17 @@
 # FileOrbit | فايل أوربت
 
-أداة ملفات محلية لويندوز. حدّد ملفات في مستكشف الملفات، ثم اضغط زر الفأرة
-الأيمن مطولاً أو اسحب مع Shift لتظهر قائمة دائرية. حرّك المؤشر نحو العملية
-وأفلت الزر لتنفيذها. الإعدادات تسمح بتشغيل أو إطفاء كل طريقة، وتغيير اللغة،
-المدة، ترتيب الصور، شاشة مراجعة النص والصور، والتشغيل مع ويندوز.
+أداة ملفات محلية لويندوز. حدّد ملفات في مستكشف الملفات، ثم اسحب مع Shift
+لتظهر القائمة الدائرية. حرّك المؤشر نحو العملية وأفلت الزر لتنفيذها.
+الإعدادات تسمح بتشغيل أو إطفاء السحب، وتغيير اللغة، ترتيب الصور، شاشة مراجعة
+النص والصور، والتشغيل مع ويندوز.
 
 ## التشغيل
 
 1. فك ضغط حزمة Windows في مجلد ثابت.
-2. شغّل `FileOrbit.exe`. ستظهر أيقونته بجانب الساعة.
-3. افتح الإعدادات من الأيقونة. لتجربة أداة من دون الإيماءات، اختر
-   **اختيار ملفات** من الأيقونة.
+2. شغّل `FileOrbit.exe`. ستظهر أيقونته بجانب الساعة. النقر الأيسر عليها يفتح
+   دائرة صغيرة فيها اختيار ملفات والإعدادات والخروج.
+3. للسحب من Explorer، اضغط Shift وابدأ بسحب الملف أو الملفات المحددة؛
+   أفلت فوق العملية داخل الدائرة. يمكن أيضاً اختيار ملفات من دائرة الأيقونة.
 4. احفظ ملفاتك الأصلية؛ النتائج تُنشأ بجانبها باسم جديد ولا تُستبدل.
 
 يدعم Windows 11. بني على .NET Framework 4.8، وقد يعمل على Windows 10، لكن
@@ -63,9 +64,9 @@ python -m pip install -r requirements.txt
 ---
 
 FileOrbit is an offline Windows tray app with a contextual radial menu.
-Select files in Explorer, hold the right button or start a Shift-drag, hover an
-action, and release. Use the tray menu to open Settings or choose files
-manually. Results are saved next to the originals without overwriting them.
+Select files in Explorer, start a Shift-drag, hover an action, and release.
+Left-click the tray icon for the circular launcher with Settings and a manual
+file picker. Results are saved next to the originals without overwriting them.
 
 Windows 11 is the tested target. The app uses .NET Framework 4.8 and may run
 on Windows 10, but that target has not been verified. The tray process stays

@@ -37,7 +37,7 @@ def label(cfg: configparser.ConfigParser, ar: str, en: str) -> str:
 def load_settings() -> configparser.ConfigParser:
     cfg = configparser.ConfigParser()
     cfg["general"] = {
-        "language": "ar", "right_hold": "1", "shift_drag": "1", "hold_ms": "500",
+        "language": "ar", "shift_drag": "1",
         "startup": "1", "review_text": "1", "review_images": "1",
         "sort": "name", "sort_desc": "0", "quality": "balanced",
     }
@@ -502,29 +502,25 @@ def review_text(text: str, cfg: configparser.ConfigParser) -> str | None:
 
 
 def settings_ui(cfg: configparser.ConfigParser) -> None:
-    window = modal(label(cfg, "إعدادات FileOrbit", "FileOrbit settings"), 520, 610)
+    window = modal(label(cfg, "إعدادات FileOrbit", "FileOrbit settings"), 520, 555)
     frame = ttk.Frame(window, padding=20)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text=label(cfg, "الإعدادات", "Settings"), font=("Segoe UI", 16, "bold")).pack(anchor="w", pady=(0, 14))
     values = cfg["general"]
     language = tk.StringVar(value=values.get("language", "ar"))
-    right = tk.BooleanVar(value=values.get("right_hold", "1") == "1")
     shift = tk.BooleanVar(value=values.get("shift_drag", "1") == "1")
     startup = tk.BooleanVar(value=values.get("startup", "1") == "1")
     review_ocr = tk.BooleanVar(value=values.get("review_text", "1") == "1")
     review_images = tk.BooleanVar(value=values.get("review_images", "1") == "1")
     sort = tk.StringVar(value=values.get("sort", "name"))
     descending = tk.BooleanVar(value=values.get("sort_desc", "0") == "1")
-    hold = tk.StringVar(value=values.get("hold_ms", "500"))
     quality = tk.StringVar(value=values.get("quality", "balanced"))
     def row(text_ar, text_en, widget):
         line = ttk.Frame(frame); line.pack(fill="x", pady=6)
         ttk.Label(line, text=label(cfg, text_ar, text_en), width=29).pack(side="left")
         widget(line).pack(side="right")
     row("لغة الواجهة", "Language", lambda p: ttk.Combobox(p, values=["ar", "en"], textvariable=language, state="readonly", width=14))
-    ttk.Checkbutton(frame, text=label(cfg, "ضغط أيمن مطوّل", "Hold right mouse button"), variable=right).pack(anchor="w", pady=5)
     ttk.Checkbutton(frame, text=label(cfg, "سحب مع Shift", "Shift + drag"), variable=shift).pack(anchor="w", pady=5)
-    row("مدة الضغط (مللي ثانية)", "Hold duration (ms)", lambda p: ttk.Entry(p, textvariable=hold, width=17))
     ttk.Checkbutton(frame, text=label(cfg, "تشغيل عند بدء ويندوز", "Start with Windows"), variable=startup).pack(anchor="w", pady=5)
     ttk.Separator(frame).pack(fill="x", pady=10)
     ttk.Checkbutton(frame, text=label(cfg, "مراجعة النص قبل الحفظ", "Review OCR text before saving"), variable=review_ocr).pack(anchor="w", pady=5)
@@ -535,10 +531,7 @@ def settings_ui(cfg: configparser.ConfigParser) -> None:
     ttk.Label(frame, text=label(cfg, "جميع المعالجات محلية ولا تُرسل الملفات للإنترنت.", "All processing is local; files are not uploaded."),
               foreground="#666666", wraplength=470).pack(anchor="w", pady=(20, 0))
     def save():
-        try: milliseconds = max(250, min(1200, int(hold.get())))
-        except ValueError: milliseconds = 500
-        values.update({"language": language.get(), "right_hold": "1" if right.get() else "0",
-                       "shift_drag": "1" if shift.get() else "0", "hold_ms": str(milliseconds),
+        values.update({"language": language.get(), "shift_drag": "1" if shift.get() else "0",
                        "startup": "1" if startup.get() else "0", "review_text": "1" if review_ocr.get() else "0",
                        "review_images": "1" if review_images.get() else "0", "sort": sort.get(),
                        "sort_desc": "1" if descending.get() else "0", "quality": quality.get()})
@@ -761,6 +754,11 @@ def act_on_file(path: Path, action: str, cfg: configparser.ConfigParser, root: t
         text = review_text(pdf_text(path), cfg)
         return save_text_as(text, path, target) if text is not None else None
     if action == "compress" and kind == "pdf": return pdf_compress(path)
+    if action in {"pdf_docx", "pdf_txt", "pdf_jpg", "pdf_png"} and kind == "pdf":
+        target = action.split("_", 1)[1]
+        if target in {"jpg", "png"}: return pdf_to_images(path, target)
+        text = review_text(pdf_text(path), cfg)
+        return save_text_as(text, path, target) if text is not None else None
     if action == "compress" and kind == "image":
         from PIL import Image, ImageOps
         with Image.open(path) as source:

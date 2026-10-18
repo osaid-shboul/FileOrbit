@@ -5,7 +5,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $compiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) { throw "The .NET Framework 4.x C# compiler was not found." }
 
-& $compiler /nologo /target:winexe /out:"$root\FileOrbit.exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll "$root\FileOrbit.cs"
+& $compiler /nologo /target:winexe /out:"$root\FileOrbit.build.exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll "$root\FileOrbit.cs"
 if ($LASTEXITCODE -ne 0) { throw "C# launcher build failed." }
 
 $vendor = Join-Path (Split-Path -Parent $root) "vendor"
@@ -24,7 +24,7 @@ if (Test-Path -LiteralPath $vendor) { $paths = @("--paths", $vendor) }
 if ($LASTEXITCODE -ne 0) { throw "Python worker build failed." }
 
 $package = Join-Path $root "dist\FileOrbit.Worker"
-Copy-Item -LiteralPath (Join-Path $root "FileOrbit.exe") -Destination $package
+Copy-Item -LiteralPath (Join-Path $root "FileOrbit.build.exe") -Destination (Join-Path $package "FileOrbit.exe")
 Copy-Item -LiteralPath (Join-Path $root "LICENSE") -Destination $package
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination $package
 Copy-Item -LiteralPath (Join-Path $root "ASSETS.md") -Destination $package
