@@ -596,10 +596,9 @@ namespace FileOrbit
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-            using (var shadow = new Pen(Color.FromArgb(34, 54, 29, 12), 12f))
-                g.DrawEllipse(shadow, size / 2 - outer - 1, size / 2 - outer - 1, (outer + 1) * 2, (outer + 1) * 2);
-            using (var halo = new Pen(Color.FromArgb(184, 255, 245, 221), 2f))
-                g.DrawEllipse(halo, size / 2 - outer - 7, size / 2 - outer - 7, (outer + 7) * 2, (outer + 7) * 2);
+            // One frame around the cards keeps the wheel from looking like stacked circles.
+            using (var frame = new Pen(Color.FromArgb(150, 255, 250, 239), 1.6f))
+                g.DrawEllipse(frame, size / 2 - outer - 5, size / 2 - outer - 5, (outer + 5) * 2, (outer + 5) * 2);
             float sweep = 360f / actions.Count;
             for (int i = 0; i < actions.Count; i++)
             {
@@ -615,8 +614,6 @@ namespace FileOrbit
                         g.FillPath(brush, path);
                     using (var pen = new Pen(BlendColor(Color.FromArgb(158, 244, 251, 255), Color.FromArgb(239, 255, 255, 255), blend), 2f + 1.3f * blend))
                         g.DrawPath(pen, path);
-                    using (var shine = new Pen(Color.FromArgb(115 + (int)(100 * blend), 255, 255, 255), 2.2f))
-                        g.DrawArc(shine, size / 2 - r + 5, size / 2 - r + 5, (r - 5) * 2, (r - 5) * 2, start + 5, sweep - 10);
                 }
                 double mid = (start + sweep / 2) * Math.PI / 180;
                 float centerRadius = (48 + r) / 2 + 2;
