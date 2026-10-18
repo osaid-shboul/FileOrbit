@@ -1,0 +1,13 @@
+assets/
+dist/
+pyi-build/
+downloads/
+*.exe
+*.spec
+__pycache__/
+*.pyc
+tests/*.pdf
+tests/*.png
+tests/*.mp3
+tests/*.wav
+tests/*.json
