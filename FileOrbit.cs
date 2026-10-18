@@ -51,6 +51,7 @@ namespace FileOrbit
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
         [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, StringBuilder name, int maxCount);
         [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string moduleName);
         [StructLayout(LayoutKind.Sequential)] public struct SIZE { public int cx, cy; public SIZE(int x, int y) { cx = x; cy = y; } }
@@ -108,14 +109,16 @@ namespace FileOrbit
         private Settings settings;
         private Wheel wheel;
         private List<string> activeFiles = new List<string>();
-        private bool leftDown, shiftArmed, pendingShiftCapture;
+        private bool leftDown, shiftArmed, oleDragActive, pendingDropResolution;
         private bool pendingShiftWheel;
         private Point pendingShiftPoint;
-        private List<string> shiftFiles = new List<string>();
+        private Point oleReleasePoint;
+        private DateTime oleReleaseAt = DateTime.MinValue;
         private string pendingAction;
         private List<string> pendingFiles;
         private Point downPoint;
         private DateTime lastSettingsRead = DateTime.MinValue;
+        private DateTime lastOutsideClick = DateTime.MinValue;
         private readonly string[] startupFiles;
 
         public TrayApp(string[] args)
@@ -171,16 +174,22 @@ namespace FileOrbit
                 settings = Settings.Load();
                 lastSettingsRead = DateTime.UtcNow;
             }
-            if (pendingShiftCapture && leftDown)
-            {
-                pendingShiftCapture = false;
-                shiftFiles = ExplorerSelection(downPoint);
-            }
             if (pendingShiftWheel && leftDown && wheel == null)
             {
                 pendingShiftWheel = false;
-                if (shiftFiles.Count == 0) shiftFiles = ExplorerSelection(downPoint);
-                if (shiftFiles.Count > 0) ShowWheel(shiftFiles, pendingShiftPoint);
+                if (IsExplorerAt(downPoint)) ShowWheel(new List<string>(), pendingShiftPoint);
+            }
+            if (wheel != null && pendingDropResolution && !leftDown &&
+                (DateTime.UtcNow - oleReleaseAt).TotalMilliseconds > 350)
+            {
+                pendingDropResolution = false;
+                if (oleDragActive) CompleteWheel(oleReleasePoint);
+                else
+                {
+                    activeFiles = ExplorerSelection(downPoint);
+                    if (activeFiles.Count > 0) wheel.SetActions(ActionsFor(activeFiles));
+                    else CompleteWheel((MenuAction)null);
+                }
             }
             if (wheel != null) wheel.UpdateHover(Cursor.Position);
         }
@@ -191,17 +200,23 @@ namespace FileOrbit
             var info = (Native.MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(Native.MSLLHOOKSTRUCT));
             Point p = new Point(info.pt.X, info.pt.Y);
             int message = wParam.ToInt32();
-            if (message == Native.WM_LBUTTONDOWN && wheel == null)
+            if (wheel != null && (message == Native.WM_LBUTTONDOWN || message == Native.WM_RBUTTONDOWN) &&
+                (message == Native.WM_RBUTTONDOWN || wheel.ActionAt(p) == null))
+            {
+                CompleteWheel((MenuAction)null);
+                lastOutsideClick = DateTime.UtcNow;
+                leftDown = shiftArmed = pendingShiftWheel = false;
+            }
+            if (message == Native.WM_LBUTTONDOWN && wheel == null &&
+                (DateTime.UtcNow - lastOutsideClick).TotalMilliseconds > 200)
             {
                 leftDown = true; downPoint = p;
                 shiftArmed = settings.ShiftDrag && (Native.GetAsyncKeyState(0x10) & 0x8000) != 0;
-                pendingShiftCapture = shiftArmed;
-                shiftFiles = new List<string>();
             }
             else if (message == Native.WM_MOUSEMOVE && leftDown && wheel == null && settings.ShiftDrag &&
                 (shiftArmed || (Native.GetAsyncKeyState(0x10) & 0x8000) != 0) && Distance(downPoint, p) > 30)
             {
-                if (!shiftArmed) { shiftArmed = true; pendingShiftCapture = true; }
+                if (!shiftArmed) shiftArmed = true;
                 pendingShiftWheel = true;
                 pendingShiftPoint = p;
             }
@@ -209,11 +224,13 @@ namespace FileOrbit
             {
                 leftDown = false;
                 shiftArmed = false;
-                pendingShiftCapture = pendingShiftWheel = false;
-                if (wheel != null && activeFiles.Count > 0)
+                pendingShiftWheel = false;
+                if (wheel != null)
                 {
-                    CompleteWheel(p);
-                    return (IntPtr)1;
+                    oleReleasePoint = p;
+                    oleReleaseAt = DateTime.UtcNow;
+                    pendingDropResolution = true;
+                    return Native.CallNextHookEx(hook, code, wParam, lParam);
                 }
             }
             return Native.CallNextHookEx(hook, code, wParam, lParam);
@@ -257,6 +274,14 @@ namespace FileOrbit
             return output.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
+        private static bool IsExplorerAt(Point point)
+        {
+            IntPtr root = Native.GetAncestor(Native.WindowFromPoint(new Native.POINT(point.X, point.Y)), Native.GA_ROOT);
+            var name = new StringBuilder(100);
+            Native.GetClassName(root, name, name.Capacity);
+            return name.ToString() == "CabinetWClass" || name.ToString() == "ExploreWClass";
+        }
+
         private static List<MenuAction> ActionsFor(List<string> files)
         {
             string[] images = { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff" };
@@ -287,10 +312,20 @@ namespace FileOrbit
 
         private void ShowWheel(List<string> files, Point p)
         {
-            if (wheel != null || files.Count == 0) return;
+            if (wheel != null) return;
+            pendingDropResolution = false;
+            oleDragActive = false;
             activeFiles = files;
-            wheel = new Wheel(ActionsFor(files), settings.Language);
+            wheel = new Wheel(files.Count > 0 ? ActionsFor(files) : new List<MenuAction> { new MenuAction("drop", "أفلت الملف", "Drop file") }, settings.Language);
             wheel.ActionClicked += delegate(MenuAction action) { CompleteWheel(action); };
+            wheel.FilesDragged += delegate(List<string> dragged)
+            {
+                activeFiles = dragged;
+                oleDragActive = true;
+                oleReleaseAt = DateTime.UtcNow;
+                wheel.SetActions(ActionsFor(dragged));
+            };
+            wheel.FilesDropped += delegate(Point at) { CompleteWheel(at); };
             PlaceWheel(p);
         }
 
@@ -305,17 +340,20 @@ namespace FileOrbit
             if (wheel == null) return;
             wheel.Close();
             wheel = null;
+            oleDragActive = false;
+            pendingDropResolution = false;
             if (action != null)
             {
                 if (action.Id == "choose") ChooseFiles();
                 else if (action.Id == "quit") ExitThread();
-                else { pendingAction = action.Id; pendingFiles = activeFiles; }
+                else if (activeFiles.Count > 0 && action.Id != "drop") { pendingAction = action.Id; pendingFiles = activeFiles; }
             }
             activeFiles = new List<string>();
         }
 
         private void ShowLauncher()
         {
+            if ((DateTime.UtcNow - lastOutsideClick).TotalMilliseconds < 250) return;
             if (wheel != null) { CompleteWheel((MenuAction)null); return; }
             activeFiles = new List<string>();
             wheel = new Wheel(new List<MenuAction> {
@@ -388,13 +426,15 @@ namespace FileOrbit
     class Wheel : Form
     {
         public event Action<MenuAction> ActionClicked;
-        private readonly List<MenuAction> actions;
+        public event Action<List<string>> FilesDragged;
+        public event Action<Point> FilesDropped;
+        private List<MenuAction> actions;
         private readonly string language;
-        private readonly float[] hoverBlend;
+        private float[] hoverBlend;
         private readonly Timer animation;
         private Bitmap backdrop;
         private int hover = -1;
-        private const int size = 320, outer = 132, inner = 48;
+        private const int size = 320, outer = 132, inner = 54;
         public Wheel(List<MenuAction> actions, string language)
         {
             this.actions = actions; this.language = language;
@@ -417,7 +457,40 @@ namespace FileOrbit
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = true;
+            AllowDrop = true;
             Shown += delegate { RedrawLayered(); };
+        }
+        public void SetActions(List<MenuAction> next)
+        {
+            if (next == null || next.Count == 0) return;
+            actions = next;
+            hoverBlend = new float[next.Count];
+            hover = -1;
+            animation.Stop();
+            RedrawLayered();
+        }
+        protected override void OnDragEnter(DragEventArgs e)
+        {
+            base.OnDragEnter(e);
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            string[] paths = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (paths == null) return;
+            var files = paths.Where(path => File.Exists(path) || Directory.Exists(path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (files.Count == 0) return;
+            e.Effect = DragDropEffects.Copy;
+            if (FilesDragged != null) FilesDragged(files);
+            UpdateHover(new Point(e.X, e.Y));
+        }
+        protected override void OnDragOver(DragEventArgs e)
+        {
+            base.OnDragOver(e);
+            e.Effect = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+            UpdateHover(new Point(e.X, e.Y));
+        }
+        protected override void OnDragDrop(DragEventArgs e)
+        {
+            base.OnDragDrop(e);
+            if (FilesDropped != null) FilesDropped(new Point(e.X, e.Y));
         }
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams
@@ -464,7 +537,7 @@ namespace FileOrbit
             base.OnMouseClick(e);
             if (e.Button != MouseButtons.Left) return;
             MenuAction action = ActionAt(PointToScreen(e.Location));
-            if (ActionClicked != null && (action != null || DistanceFromCenter(e.Location) < inner)) ActionClicked(action);
+            if (ActionClicked != null) ActionClicked(action);
         }
         public MenuAction ActionAt(Point screen)
         {
@@ -546,7 +619,7 @@ namespace FileOrbit
                         g.DrawArc(shine, size / 2 - r + 5, size / 2 - r + 5, (r - 5) * 2, (r - 5) * 2, start + 5, sweep - 10);
                 }
                 double mid = (start + sweep / 2) * Math.PI / 180;
-                float centerRadius = (inner + r) / 2 + 2;
+                float centerRadius = (48 + r) / 2 + 2;
                 float tx = size / 2 + (float)Math.Cos(mid) * centerRadius;
                 float ty = size / 2 + (float)Math.Sin(mid) * centerRadius;
                 using (Font font = new Font("Segoe UI", 9f + 1.1f * blend, FontStyle.Bold))
@@ -558,15 +631,6 @@ namespace FileOrbit
                         g.DrawString(actions[i].Label(language), font, brush, new RectangleF(tx - 48, ty - 21, 96, 42), format);
                 }
             }
-            using (var center = new GraphicsPath())
-            {
-                center.AddEllipse(size / 2 - inner + 4, size / 2 - inner + 4, (inner - 4) * 2, (inner - 4) * 2);
-                DrawFrosted(g, center);
-                using (var brush = new LinearGradientBrush(new Point(size / 2, size / 2 - inner), new Point(size / 2, size / 2 + inner), Color.FromArgb(121, 221, 239, 251), Color.FromArgb(82, 100, 137, 166)))
-                    g.FillPath(brush, center);
-            }
-            using (var pen = new Pen(Color.FromArgb(222, 246, 252, 255), 2f))
-                g.DrawEllipse(pen, size / 2 - inner + 4, size / 2 - inner + 4, (inner - 4) * 2, (inner - 4) * 2);
         }
         private void DrawFrosted(Graphics g, GraphicsPath shape)
         {
